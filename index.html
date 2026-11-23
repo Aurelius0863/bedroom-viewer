@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#14161a"><meta name="robots" content="noindex">
+<title>Bedroom Redesign Viewer</title>
+<style>
+:root{--bg:#14161a;--panel:rgba(24,27,33,.88);--line:#3a3f48;--fg:#eceff4;--mut:#9aa3b2;--acc:#3b82f6}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:14px/1.3 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden;overscroll-behavior:none}
+#stage{position:fixed;inset:0}#stage canvas{display:block;width:100%;height:100%;touch-action:none}
+#top,#bar{position:fixed;left:0;right:0;z-index:3;display:flex;gap:6px;padding:8px max(10px,env(safe-area-inset-left)) 8px max(10px,env(safe-area-inset-right))}
+#top{top:0;padding-top:max(8px,env(safe-area-inset-top));justify-content:center;background:linear-gradient(var(--bg),transparent)}
+#bar{bottom:0;padding-bottom:max(10px,env(safe-area-inset-bottom));flex-wrap:wrap;justify-content:center;background:linear-gradient(transparent,var(--bg))}
+#top::-webkit-scrollbar,#bar::-webkit-scrollbar{display:none}
+button{flex:0 0 auto;background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:999px;padding:9px 12px;font:inherit;cursor:pointer;backdrop-filter:blur(8px);white-space:nowrap}
+button.on{background:var(--acc);border-color:var(--acc)}
+#sheet{position:fixed;z-index:4;left:0;right:0;bottom:calc(104px + env(safe-area-inset-bottom));margin:0 auto;max-width:520px;padding:10px;display:grid;grid-template-columns:repeat(2,1fr);gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:16px;backdrop-filter:blur(10px)}
+#sheet[hidden],#load[hidden],#toast[hidden]{display:none}
+#sheet button{border-radius:12px;text-align:center}
+#msg{position:fixed;z-index:2;left:0;right:0;bottom:calc(98px + env(safe-area-inset-bottom));text-align:center;color:var(--mut);font-size:12px;pointer-events:none}
+#hint{position:fixed;z-index:2;left:0;right:0;top:calc(58px + env(safe-area-inset-top));text-align:center;color:var(--mut);font-size:12px;pointer-events:none}
+#load{position:fixed;inset:0;z-index:6;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--mut)}
+#toast{position:fixed;z-index:7;top:60px;left:50%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px;max-width:90vw;text-align:center}
+#xF{display:none;position:fixed;z-index:5;top:max(10px,env(safe-area-inset-top));right:max(10px,env(safe-area-inset-right))}
+body.immersive #top,body.immersive #bar,body.immersive #msg,body.immersive #hint{opacity:.0;pointer-events:none}
+body.immersive:hover #bar{}
+body.immersive #xF{display:block}
+body.immersive.show #top,body.immersive.show #bar{opacity:1;pointer-events:auto}
+@media (min-width:700px){#sheet{bottom:calc(64px + env(safe-area-inset-bottom))}#msg{bottom:calc(58px + env(safe-area-inset-bottom))}#top{justify-content:center}#sheet{grid-template-columns:repeat(4,1fr);max-width:720px}}
+</style></head><body>
+<div id="stage"></div>
+<div id="top"><button id="th_orig">Original</button><button id="th_green2">Green</button><button id="th_blue">Blue / Black</button></div>
+<div id="hint">Drag to look around · pinch to zoom · two fingers to move</div>
+<div id="msg"></div>
+<div id="bar"><button id="bN">☾ Night</button><button id="bW">Walls: see-through</button><button id="bD">Close door</button><button id="bV">Views ▴</button><button id="bF">⛶ Full screen</button></div>
+<div id="sheet" hidden>
+<button data-v="three">3/4 view</button><button data-v="top">Top</button><button data-v="in">Door → sofa</button><button data-v="desk">Desk → bed</button><button data-v="bed">Bed → desk</button><button data-v="couch">Couch corner</button><button data-v="bedc">Bed corner</button><button data-v="dresser">Dresser corner</button></div>
+<button id="xF">✕ Exit</button>
+<div id="load"><div>Loading room…</div><div id="lp">0%</div></div><div id="toast" hidden></div>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+<script type="module">
+import * as THREE from './vendor/three.module.js';
+import {OrbitControls} from './vendor/addons/controls/OrbitControls.js';
+import {GLTFLoader} from './vendor/addons/loaders/GLTFLoader.js';
+import {DRACOLoader} from './vendor/addons/loaders/DRACOLoader.js';
+const r=new THREE.WebGLRenderer({antialias:true});r.setPixelRatio(Math.min(devicePixelRatio,2));r.setSize(innerWidth,innerHeight);document.getElementById('stage').appendChild(r.domElement);
+r.toneMapping=THREE.ACESFilmicToneMapping;r.toneMappingExposure=1.6;
+const sc=new THREE.Scene();sc.background=new THREE.Color(0x1b1d22);
+const cam=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.02,100);
+const oc=new OrbitControls(cam,r.domElement);oc.enableDamping=true;oc.minDistance=0.05;oc.maxDistance=40;oc.zoomToCursor=true;oc.touches={ONE:THREE.TOUCH.ROTATE,TWO:THREE.TOUCH.DOLLY_PAN};oc.rotateSpeed=0.7;
+const hemi=new THREE.HemisphereLight(0xffffff,0xccbba0,2.6);sc.add(hemi);
+const dl=new THREE.DirectionalLight(0xffffff,1.6);dl.position.set(3,6,-2);sc.add(dl);
+const dl2=new THREE.DirectionalLight(0xfff0dd,0.8);dl2.position.set(-2,3,5);sc.add(dl2);
+// Blender (X, Y=-z_plan, Z up) -> glTF Y-up: x=X, y=Z, z=-Y = plan z.  Room spans x 0..2.84, z 0..5.56
+const V={top:[[1.42,9,2.9],[1.42,0,2.78]],three:[[-2.8,5.5,7.5],[1.4,0.5,2.6]],
+ couch:[[0.2,2.1,0.2],[1.8,0.6,4.2],70],bedc:[[2.70,2.15,5.50],[0.9,1.0,1.4],72],dresser:[[0.16,2.05,5.40],[2.0,0.6,2.4],68],
+ in:[[1.1,1.5,3.6],[1.4,1.0,0.2]],desk:[[1.55,1.5,2.2],[2.2,0.7,5.0]],bed:[[2.25,1.35,5.3],[2.4,1.0,2.7]]};
+let baseFov=45;function fit(){const a=innerWidth/innerHeight;let f=baseFov;if(a<1.25){f=2*Math.atan(Math.tan(baseFov*Math.PI/360)*1.25/a)*180/Math.PI;}cam.fov=Math.min(f,105);cam.aspect=a;cam.updateProjectionMatrix();}
+function view(k){if(['couch','bedc','dresser'].includes(k)&&doorTarget){bD.click();}
+ const [p,t]=V[k];cam.position.set(...p);oc.target.set(...t);baseFov=V[k][2]||(k==='top'||k==='three'?45:70);fit();oc.update();}
+let walls=[],mode='trans',pivot=null,doorTarget=0,doorAng=0;const AJAR=-70*Math.PI/180;doorTarget=AJAR;
+let current=null,accentLights=[],glowMats=[],night=false;
+const ROOMGLOW=new THREE.PointLight(0xffc88a,0,9,1.6);ROOMGLOW.position.set(1.4,2.2,2.8);sc.add(ROOMGLOW);
+function collectAccents(){
+ accentLights.forEach(l=>sc.remove(l));accentLights=[];glowMats=[];
+ const spec=[[/^led_blue/,0x2f8bff,0.5,2.4],[/^led_warm/,0xffd9a3,0.3,2.2],[/^puck_glow/,0xffd9a3,2.0,2.0],[/^shelf_led_glow/,0xffd9a3,1.2,1.6],[/^lamp_shade_glow/,0xffc27a,9,3.0]];
+ current.traverse(o=>{ if(!o.isMesh||!o.material) return; const n=o.material.name||'';
+  for(const [re,col,inten,dist] of spec){ if(re.test(n)){
+    if(!glowMats.includes(o.material)) glowMats.push(o.material);
+    const c=new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3());
+    const L=new THREE.PointLight(col,0,dist,1.7);L.userData.I=inten;L.position.copy(c);
+    if(/^led_warm/.test(n)) L.position.y-=0.05;
+    sc.add(L);accentLights.push(L);break; } } });
+}
+function applyTime(){
+ hemi.intensity=night?0.28:2.6; hemi.color.set(night?0x6f86c4:0xffffff); hemi.groundColor.set(night?0x1a1a2a:0xccbba0);
+ dl.intensity=night?0.25:1.6; dl.color.set(night?0x7f98d8:0xffffff); dl2.intensity=night?0.05:0.8;
+ sc.background=new THREE.Color(night?0x05060a:0x1b1d22); r.toneMappingExposure=night?1.35:1.6;
+ ROOMGLOW.intensity=night?0.6:0;
+ accentLights.forEach(l=>l.intensity=night?l.userData.I:0);
+ glowMats.forEach(m=>{m.emissiveIntensity=night?3.0:0.2;});
+ bN.textContent=night?'☀ Day':'☾ Night';bN.classList.toggle('on',night);
+}
+bN.onclick=()=>{night=!night;applyTime();};
+addEventListener('keydown',e=>{if(e.key==='n')bN.click();});
+const cache={};const loader=new GLTFLoader();const dr=new DRACOLoader();dr.setDecoderPath('draco/');dr.setDecoderConfig({type:'js'});loader.setDRACOLoader(dr);
+function setup(g){
+ if(current){sc.remove(current);if(pivot)sc.remove(pivot);}
+ current=g.scene;sc.add(current);walls=[];pivot=null;
+ current.traverse(o=>{ if(o.isMesh&&/^wall/i.test(o.name)){ o.material=o.material.clone(); o.material.side=THREE.DoubleSide; walls.push(o);} });
+ const leaf=current.getObjectByName('door_leaf');
+ if(leaf){pivot=new THREE.Group();pivot.position.set(0.02,0,3.12);sc.add(pivot);pivot.add(leaf);leaf.position.set(0,1.03,-0.45);leaf.quaternion.identity();doorAng=doorTarget;}
+ document.getElementById('msg').textContent=themeName;document.getElementById('load').hidden=true;
+ collectAccents();apply();applyTime();
+}
+let themeName='Original room';
+function loadTheme(file,label,first){
+ themeName=label;document.getElementById('msg').textContent='Loading '+label+'…';document.getElementById('load').hidden=false;
+ if(cache[file]){setup(cache[file]);if(first)view('three');return;}
+ loader.load(file,g=>{cache[file]=g;setup(g);if(first)view('three');},ev=>{if(ev.total)document.getElementById('lp').textContent=Math.round(100*ev.loaded/ev.total)+'%';},()=>{document.getElementById('lp').textContent='Could not load. Refresh to retry.';});
+}
+const THEMES={orig:['models/bedroom_room_light.glb','Original room'],green2:['models/bedroom_room_green2_light.glb','Green (Amazon picks, bed flipped)'],blue:['models/bedroom_room_blue_light.glb','Blue/Black dream room']};
+function pick(k){Object.keys(THEMES).forEach(t=>document.getElementById('th_'+t).classList.toggle('on',t===k));loadTheme(THEMES[k][0],THEMES[k][1],false);}
+th_orig.onclick=()=>pick('orig');th_green2.onclick=()=>pick('green2');th_blue.onclick=()=>pick('blue');
+addEventListener('keydown',e=>{if(e.key==='o')pick('orig');if(e.key==='a')pick('green2');if(e.key==='b')pick('blue');});
+loadTheme(THEMES.green2[0],THEMES.green2[1],true);th_green2.classList.add('on');
+function apply(){walls.forEach(w=>{w.visible=mode!=='hide';const t=mode==='trans';w.material.transparent=t;w.material.opacity=t?0.12:1;w.material.depthWrite=!t;w.material.needsUpdate=true;});
+ bW.textContent=mode==='trans'?'Walls: see-through':mode==='hide'?'Walls: hidden':'Walls: solid';}
+bD.onclick=()=>{doorTarget=doorTarget?0:AJAR;bD.textContent=doorTarget?'Open door':'Close door';};
+bW.onclick=()=>{mode=mode==='trans'?'hide':mode==='hide'?'solid':'trans';apply();};const bT={click:()=>{mode=mode==='trans'?'solid':'trans';apply();}},bH={click:()=>{mode=mode==='hide'?'solid':'hide';apply();}};
+addEventListener('keydown',e=>{if(e.key==='t')bT.click();if(e.key==='h')bH.click();if(e.key==='d')bD.click();});
+document.querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>{view(b.dataset.v);sheet.hidden=true;});bV.onclick=()=>{sheet.hidden=!sheet.hidden;};
+function onResize(){r.setSize(innerWidth,innerHeight);fit();}addEventListener('resize',onResize);addEventListener('orientationchange',()=>setTimeout(onResize,250));
+(function loop(){requestAnimationFrame(loop);if(pivot){doorAng+=(doorTarget-doorAng)*0.08;pivot.rotation.y=doorAng;}oc.update();r.render(sc,cam);})();
+
+// ---- fullscreen / immersive + landscape
+const root=document.documentElement;
+function isFS(){return document.fullscreenElement||document.webkitFullscreenElement;}
+async function enterFS(){
+ try{ if(root.requestFullscreen) await root.requestFullscreen(); else if(root.webkitRequestFullscreen) root.webkitRequestFullscreen(); else throw 0;
+  try{ await screen.orientation.lock('landscape'); }catch(e){}
+ }catch(e){ document.body.classList.add('immersive'); toast('Full view on. Rotate your phone sideways for landscape.'); }
+ document.body.classList.add('immersive'); setTimeout(onResize,150);
+}
+function exitFS(){ try{ if(isFS()){ (document.exitFullscreen||document.webkitExitFullscreen).call(document);} }catch(e){} try{screen.orientation.unlock();}catch(e){} document.body.classList.remove('immersive'); setTimeout(onResize,150); }
+bF.onclick=()=>{document.body.classList.contains('immersive')?exitFS():enterFS();};
+xF.onclick=exitFS;
+document.addEventListener('fullscreenchange',()=>{ if(!isFS()&&document.body.classList.contains('immersive')){document.body.classList.remove('immersive');} setTimeout(onResize,150);});
+function toast(t){const e=document.getElementById('toast');e.textContent=t;e.hidden=false;setTimeout(()=>e.hidden=true,3500);}
+addEventListener('keydown',e=>{if(e.key==='f')bF.click();});
+</script>
+<script>
+// tap the scene in full screen to show / hide the controls
+document.getElementById('stage').addEventListener('click',()=>{if(document.body.classList.contains('immersive'))document.body.classList.toggle('show');});
+setTimeout(()=>{const h=document.getElementById('hint');if(h)h.style.display='none';},9000);
+</script></body></html>
